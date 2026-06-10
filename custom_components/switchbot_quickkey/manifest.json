@@ -1,0 +1,14 @@
+{
+  "domain": "switchbot_quickkey",
+  "name": "SwitchBot Lock Quick Key (interim)",
+  "version": "0.3.0",
+  "config_flow": true,
+  "documentation": "https://github.com/mayerwin/ha-switchbot-lock-quick-key-support",
+  "issue_tracker": "https://github.com/mayerwin/ha-switchbot-lock-quick-key-support/issues",
+  "dependencies": ["bluetooth"],
+  "after_dependencies": ["switchbot"],
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "codeowners": ["@mayerwin"],
+  "requirements": []
+}

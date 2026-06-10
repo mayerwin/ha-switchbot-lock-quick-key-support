@@ -1,0 +1,17 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "SwitchBot Lock Quick Key",
+        "description": "Pick the SwitchBot lock to expose Quick Key controls for. Encryption keys are reused from the existing SwitchBot integration.",
+        "data": {
+          "address": "Lock"
+        }
+      }
+    },
+    "abort": {
+      "no_locks": "No SwitchBot lock with stored encryption keys was found. Set up the lock in the SwitchBot integration first.",
+      "already_configured": "Quick Key controls are already configured for this lock."
+    }
+  }
+}
