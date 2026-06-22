@@ -1,7 +1,7 @@
 {
   "domain": "switchbot_quickkey",
   "name": "SwitchBot Lock Quick Key (interim)",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "config_flow": true,
   "documentation": "https://github.com/mayerwin/ha-switchbot-lock-quick-key-support",
   "issue_tracker": "https://github.com/mayerwin/ha-switchbot-lock-quick-key-support/issues",

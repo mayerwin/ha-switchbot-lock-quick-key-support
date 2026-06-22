@@ -24,6 +24,7 @@ from .const import (
     CMD_READ,
     CONFIRM_READ_DEADLINE_S,
     DOMAIN,
+    FUNCTION_LABELS,
     MASK_FUNCTION,
     READ_DEADLINE_S,
     RETRY_BACKOFF_S,
@@ -90,11 +91,21 @@ async def write_config(dev: SwitchbotLock, mask: int, value: int,
 def parse_config(cfg: int | None) -> dict:
     if cfg is None:
         return {"raw": None, "enabled": None, "double_press": None, "function": None}
+    func = cfg & MASK_FUNCTION
+    if func not in FUNCTION_LABELS:
+        # The 2-bit function field has 4 possible values but only 3 are defined.
+        # A firmware variant or a corrupted BLE byte could report the undefined 4th
+        # (0b11); keep the well-defined enable/trigger bits and surface the function
+        # as unknown rather than guessing or passing a stray value to the select.
+        _LOGGER.warning(
+            "Unknown Quick Key function value: 0x%02x (config byte 0x%02x)", func, cfg
+        )
+        func = None
     return {
         "raw": cfg,
         "enabled": bool(cfg & BIT_ENABLE),
         "double_press": bool(cfg & BIT_DOUBLE),
-        "function": cfg & MASK_FUNCTION,
+        "function": func,
     }
 
 
