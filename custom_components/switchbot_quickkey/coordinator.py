@@ -2,9 +2,15 @@
 
 Reuses the *live* SwitchbotLock object owned by the core `switchbot` integration
 (`entry.runtime_data.device`) so our reads/writes ride its existing BLE
-connection and operation-lock — serialized with HA's own polls. Opening our own
+connection and operation-lock, serialized with HA's own polls. Opening our own
 second connection caused permanent org.bluez.Error.InProgress contention for the
 lock's single radio; reuse eliminates it entirely (and the keys come for free).
+
+Nothing here validates the *content* of the config byte. The reply is already
+decrypted and authenticated by pySwitchbot, `_read_once` checks the status byte
+and length, and `read_config` requires two agreeing reads before it accepts a
+value. A "does this byte look plausible" test on top of that bought nothing and
+silently broke a lock whose undecoded high bits differ from ours; see const.py.
 """
 from __future__ import annotations
 
@@ -14,7 +20,7 @@ import time
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from switchbot.devices.lock import SwitchbotLock
 
@@ -33,24 +39,29 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# Every valid Quick Key config byte has bits 6-7 set (0xC0 status flags).
-VALID_HIGH_BITS = 0xC0
 
-
-def _is_valid(cfg: int | None) -> bool:
-    return cfg is not None and (cfg & VALID_HIGH_BITS) == VALID_HIGH_BITS
+def _hexbyte(value: int | None) -> str:
+    return "none" if value is None else f"0x{value:02x}"
 
 
 async def _read_once(dev: SwitchbotLock) -> int | None:
     res = await dev._send_command(CMD_READ)
     if not res or len(res) < 2 or res[0] not in (1, 6):
+        # Debug rather than warning: this runs inside a retry loop, so a genuinely
+        # unreachable lock would emit ~30 of these per read. The give-up warning
+        # below is the one that fires once.
+        _LOGGER.debug(
+            "Quick Key reply discarded: %s",
+            res.hex() if res else repr(res),
+        )
         return None
+    _LOGGER.debug("Quick Key read reply: %s", res.hex())
     return res[1]
 
 
 async def read_config(dev: SwitchbotLock, deadline: float = READ_DEADLINE_S) -> int | None:
-    """Read the config byte; retry up to `deadline`s, require a valid byte
-    (prefer two agreeing reads). None if it never reads cleanly."""
+    """Read the config byte; retry up to `deadline`s, preferring two agreeing
+    reads. Returns the last byte read, or None if nothing ever read cleanly."""
     end = time.monotonic() + deadline
     last: int | None = None
     while True:
@@ -59,18 +70,32 @@ async def read_config(dev: SwitchbotLock, deadline: float = READ_DEADLINE_S) -> 
         except Exception as ex:  # noqa: BLE001
             _LOGGER.debug("Quick Key read attempt failed: %s", ex)
             cfg = None
-        if _is_valid(cfg):
+        if cfg is not None:
             if cfg == last:
                 return cfg
             last = cfg
         if time.monotonic() >= end:
+            if last is None:
+                _LOGGER.warning(
+                    "Quick Key read gave up after %.0fs: the lock never returned a "
+                    "usable reply (enable debug logging for %s to see the raw replies)",
+                    deadline,
+                    __package__,
+                )
+            else:
+                _LOGGER.warning(
+                    "Quick Key read gave up after %.0fs without two agreeing reads; "
+                    "using the last byte seen (%s)",
+                    deadline,
+                    _hexbyte(last),
+                )
             return last
         await asyncio.sleep(RETRY_BACKOFF_S)
 
 
 async def write_config(dev: SwitchbotLock, mask: int, value: int,
                        deadline: float = WRITE_DEADLINE_S) -> int | None:
-    """Masked-write; retry up to `deadline`s until the lock echoes a valid byte
+    """Masked-write; retry up to `deadline`s until the lock echoes a byte
     carrying the requested bits. Returns the new byte, or None."""
     cmd = f"570f4e040100{mask:02x}{value:02x}ff"
     end = time.monotonic() + deadline
@@ -81,9 +106,17 @@ async def write_config(dev: SwitchbotLock, mask: int, value: int,
             _LOGGER.debug("Quick Key write attempt failed: %s", ex)
             res = None
         echo = res[1] if res and len(res) >= 2 and res[0] in (1, 6) else None
-        if _is_valid(echo) and (echo & mask) == (value & mask):
+        if echo is not None and (echo & mask) == (value & mask):
             return echo
         if time.monotonic() >= end:
+            _LOGGER.warning(
+                "Quick Key write gave up after %.0fs: asked for mask=%s value=%s, "
+                "last echo was %s",
+                deadline,
+                _hexbyte(mask),
+                _hexbyte(value),
+                _hexbyte(echo),
+            )
             return None
         await asyncio.sleep(RETRY_BACKOFF_S)
 
@@ -129,9 +162,12 @@ class QuickKeyCoordinator(DataUpdateCoordinator[dict]):
     async def _async_update_data(self) -> dict:
         dev = self.core_device()
         if dev is None:
-            return parse_config(None)
-        val = await read_config(dev)
-        return parse_config(val)
+            # Distinct from a failed BLE read: without this the two look identical
+            # from outside, which is a debugging dead end.
+            raise UpdateFailed(
+                f"The core switchbot integration has no live device for {self.address}"
+            )
+        return parse_config(await read_config(dev))
 
     async def async_apply(self, mask: int, value: int) -> None:
         dev = self.core_device()

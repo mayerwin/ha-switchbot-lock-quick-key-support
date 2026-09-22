@@ -3,11 +3,11 @@
 The "Quick Key" feature and
 its sub-settings live in a SINGLE config byte on the lock, read/written over BLE:
 
-    READ : 57 0f 4f 04 01                 -> reply: <status> <CFG> 00 00 00 80
+    READ : 57 0f 4f 04 01                 -> reply: <status> <CFG> 00 00 00 <f>
     WRITE: 57 0f 4e 04 01 00 <mask> <val> ff   (masked write of the low nibble)
            reply echoes the resulting <CFG> byte (write is acknowledged)
 
-CFG byte layout (low nibble; high bits 0xC0 are constant status flags):
+CFG byte layout. Only the LOW NIBBLE carries Quick Key settings:
 
     bit 3 (0x08) = Quick Key ENABLED        (1 = on)
     bit 2 (0x04) = trigger: 1 = DOUBLE press (2 presses), 0 = SINGLE press
@@ -18,6 +18,14 @@ CFG byte layout (low nibble; high bits 0xC0 are constant status flags):
 
 A masked write sets result = (current & ~mask) | (val & mask); the firmware
 enforces mutual-exclusivity of the function enum bits.
+
+Bits 7-6 are UNDECODED status flags of unknown meaning, and they are NOT constant
+across locks. Our lock (firmware V2.6) reports them as 0xC0; a second Lock Ultra
+reports 0x80 with the same low nibble and identical observed behaviour, and the
+trailing bytes of its read reply differ from ours too (issue #1 on
+mayerwin/ha-switchbot-lock-quick-key-support, 2026-09-21). Nothing about Quick Key
+depends on them, so they are reported raw and never validated against: treating
+0xC0 as a protocol constant silently discarded every reply that second lock sent.
 """
 
 DOMAIN = "switchbot_quickkey"

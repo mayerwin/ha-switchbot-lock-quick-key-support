@@ -58,15 +58,25 @@ The Quick Key feature and its sub-settings live in a **single config byte** on t
 read/written over BLE:
 
 ```
-READ : 57 0f 4f 04 01            -> reply: <status> <CFG> 00 00 00 80
+READ : 57 0f 4f 04 01            -> reply: <status> <CFG> 00 00 00 <f>
 WRITE: 57 0f 4e 04 01 00 <mask> <val> ff   (masked write of the low nibble)
 ```
 
-CFG byte (low nibble; high bits `0xC0` are constant status flags):
+CFG byte, low nibble only:
 
 - bit 3 (`0x08`) = Quick Key **enabled**
 - bit 2 (`0x04`) = trigger: 1 = **double** press, 0 = **single**
 - bits 1-0 (`0x03`) = function: `0b10` Lock & Unlock · `0b01` Unlock Only · `0b00` Lock Only
+
+Bits 7-6 of `CFG`, and the trailing `<f>` byte of the read reply, are **undecoded status
+flags of unknown meaning, and they are not constant across locks**. Quick Key does not
+depend on them, so they are reported raw and never validated against.
+
+> Releases before **0.3.2** required bits 7-6 to be set and silently discarded every reply
+> from a lock that did not set both, with no log line to say so. If you were seeing
+> `unknown` state and *"Quick Key write was not confirmed by the lock"* while the setting
+> actually changed on the lock, that was this bug. See
+> [#1](https://github.com/mayerwin/ha-switchbot-lock-quick-key-support/issues/1).
 
 To avoid the `org.bluez.Error.InProgress` contention that two connections to one lock
 radio cause, this integration borrows the **live `SwitchbotLock` object** owned by the
@@ -78,6 +88,10 @@ after each write, to spare the lock's battery.
 
 - **SwitchBot Lock Ultra**, firmware **V2.6**, via HA Bluetooth. All function/trigger/enable
   combinations write + read-back cleanly (verified end-to-end).
+- A **second SwitchBot Lock Ultra** (reported in [#1](https://github.com/mayerwin/ha-switchbot-lock-quick-key-support/issues/1),
+  RPi 5 built-in adapter). Same low nibble, same decoding, same behaviour, but it reports
+  `0x8a`/`0x8e` where the first lock reports `0xc2`/`0xca`. That is what established that
+  bits 7-6 vary between locks.
 
 ## License
 
