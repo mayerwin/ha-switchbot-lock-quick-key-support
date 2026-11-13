@@ -29,30 +29,35 @@ All commands are the plaintext `pySwitchbot` feeds into the encrypted envelope
 (AES-CTR, key from the cloud / stored by the core integration):
 
 ```
-READ : 57 0f 4f 04 01                       -> <status> <CFG> 00 00 00 <f>
-WRITE: 57 0f 4e 04 01 00 <mask> <val> ff     -> echoes resulting <CFG>
-       result = (current & ~mask) | (val & mask)
+READ : 57 0f 4f 04 01                         -> <status> <CFG> <..> <motor> ...
+WRITE: 57 0f 4e 04 01 00 <update> <val> ff     -> echoes resulting <CFG>
 ```
 
-`CFG` byte, low nibble only:
+`CFG` byte:
 
 ```
+bit 7 (0x80) = light            } lock properties, not Quick Key;
+bit 6 (0x40) = sound            } this integration never writes them
+bit 4 (0x10) = manual-unlock linkage
 bit 3 (0x08) = Quick Key enabled
 bit 2 (0x04) = trigger: 1 = Double press (2), 0 = Single press (1)
 bits 1-0 (0x03) = function: 0x02 Lock&Unlock | 0x01 Unlock-only | 0x00 Lock-only
 ```
 
-Example writes: enable `…000808ff`, disable `…000800ff`, double `…000404ff`,
-single `…000400ff`, Lock&Unlock `…000302ff`, Unlock-only `…000301ff`,
-Lock-only `…000300ff`.
+`<update>` selects fields: bits 7, 6, 4, 3, 2 each select their own bit, and bit 1
+alone selects the whole 2-bit function field (SwitchBot's protocol, quoted on
+sblibs/pySwitchbot#515; checked on a Lock Ultra for all six function transitions).
+The trailing `ff` keeps the motor speed.
 
-Bits 7-6 of `CFG` (and the trailing `<f>` byte of the read reply) are **undecoded
-status flags of unknown meaning, and they are not constant across locks**: this
-lock (firmware V2.6) reports `0xC0` and `0x80`, a second Lock Ultra reports `0x80`
-and `0x00` with the same low nibble and identical behaviour ([#1][issue1]). Quick
-Key does not depend on them, so they are reported raw and never validated against.
-Releases before 0.3.2 required `0xC0` and therefore discarded every reply from any
-lock that does not set both bits, with no log line to say so.
+Example writes: enable `…000808ff`, disable `…000800ff`, double `…000404ff`,
+single `…000400ff`, Lock&Unlock `…000202ff`, Unlock-only `…000201ff`,
+Lock-only `…000200ff`. Releases up to 0.3.2 sent `03` as the function selector,
+which also set an undefined selector bit.
+
+Bits 7-6 differ between locks because they are user settings (light, sound), so they
+are reported raw and never validated against ([#1][issue1]). Releases before 0.3.2
+required `0xC0` and therefore discarded every reply from a lock with sound or light
+off, with no log line to say so.
 
 [issue1]: https://github.com/mayerwin/ha-switchbot-lock-quick-key-support/issues/1
 

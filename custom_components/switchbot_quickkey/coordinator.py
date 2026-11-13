@@ -34,6 +34,7 @@ from .const import (
     MASK_FUNCTION,
     READ_DEADLINE_S,
     RETRY_BACKOFF_S,
+    SEL_FUNCTION,
     WRITE_DEADLINE_S,
 )
 
@@ -95,9 +96,17 @@ async def read_config(dev: SwitchbotLock, deadline: float = READ_DEADLINE_S) -> 
 
 async def write_config(dev: SwitchbotLock, mask: int, value: int,
                        deadline: float = WRITE_DEADLINE_S) -> int | None:
-    """Masked-write; retry up to `deadline`s until the lock echoes a byte
-    carrying the requested bits. Returns the new byte, or None."""
-    cmd = f"570f4e040100{mask:02x}{value:02x}ff"
+    """Write the fields covered by `mask`; retry up to `deadline`s until the lock
+    echoes a byte carrying the requested bits. Returns the new byte, or None.
+
+    `mask` is in CFG-bit terms. The update byte the lock expects is a field
+    selector, where bit 1 alone selects the whole 2-bit function field, so the
+    function bits are translated here and the echo is still compared on all of
+    `mask`."""
+    update = mask & ~MASK_FUNCTION
+    if mask & MASK_FUNCTION:
+        update |= SEL_FUNCTION
+    cmd = f"570f4e040100{update:02x}{value:02x}ff"
     end = time.monotonic() + deadline
     while True:
         try:

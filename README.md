@@ -58,19 +58,26 @@ The Quick Key feature and its sub-settings live in a **single config byte** on t
 read/written over BLE:
 
 ```
-READ : 57 0f 4f 04 01            -> reply: <status> <CFG> 00 00 00 <f>
-WRITE: 57 0f 4e 04 01 00 <mask> <val> ff   (masked write of the low nibble)
+READ : 57 0f 4f 04 01                        -> reply: <status> <CFG> <..> <motor> ...
+WRITE: 57 0f 4e 04 01 00 <update> <val> ff   (ff = keep motor speed)
 ```
 
-CFG byte, low nibble only:
+CFG byte:
 
+- bit 7 (`0x80`) = light, bit 6 (`0x40`) = sound, bit 4 (`0x10`) = manual-unlock linkage (lock properties, not touched by this integration)
 - bit 3 (`0x08`) = Quick Key **enabled**
 - bit 2 (`0x04`) = trigger: 1 = **double** press, 0 = **single**
 - bits 1-0 (`0x03`) = function: `0b10` Lock & Unlock · `0b01` Unlock Only · `0b00` Lock Only
 
-Bits 7-6 of `CFG`, and the trailing `<f>` byte of the read reply, are **undecoded status
-flags of unknown meaning, and they are not constant across locks**. Quick Key does not
-depend on them, so they are reported raw and never validated against.
+`<update>` is a **field selector**, not a per-bit mask: bits 7, 6, 4, 3 and 2 select
+their own field, and **bit 1 alone selects the whole function field**. This layout comes
+from SwitchBot's protocol, as quoted by a SwitchBot developer in
+[sblibs/pySwitchbot#515](https://github.com/sblibs/pySwitchbot/pull/515), and it was
+checked on a Lock Ultra for every function transition. Releases up to 0.3.2 sent `0x03`
+for the function. That worked, but it also set an undefined selector bit; 0.3.3 sends `0x02`.
+
+Bits 7-6 differ between locks because they are user settings, so this integration
+reports them raw and never validates them.
 
 > Releases before **0.3.2** required bits 7-6 to be set and silently discarded every reply
 > from a lock that did not set both, with no log line to say so. If you were seeing
